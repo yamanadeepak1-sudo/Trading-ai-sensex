@@ -30,7 +30,17 @@ def groww_headers():
         "X-API-VERSION": "1.0",
     }
 
-def fetch_sensex_candles(days=5):
+SUPPORTED_INTERVALS = {
+    "1minute": 7, "2minute": 15, "3minute": 15, "5minute": 15,
+    "10minute": 30, "15minute": 30, "30minute": 60,
+    "1hour": 150, "4hour": 365, "1day": 1080,
+    "1week": 3650, "1month": 3650,
+}
+
+def fetch_sensex_candles(interval="15minute"):
+    if interval not in SUPPORTED_INTERVALS:
+        raise HTTPException(400, "Unsupported timeframe.")
+    days = SUPPORTED_INTERVALS[interval]
     end = datetime.now(IST).replace(tzinfo=None)
     start = end - timedelta(days=days)
     params = {
@@ -39,7 +49,7 @@ def fetch_sensex_candles(days=5):
         "groww_symbol": "BSE-SENSEX",
         "start_time": start.strftime("%Y-%m-%d %H:%M:%S"),
         "end_time": end.strftime("%Y-%m-%d %H:%M:%S"),
-        "candle_interval": "15minute",
+        "candle_interval": interval,
     }
     r = requests.get(
         f"{GROWW_BASE}/v1/historical/candles",
@@ -87,7 +97,7 @@ def add_indicators(df):
     d["ll20"] = d["low"].rolling(20).min().shift(1)
     return d
 
-def make_signal(df):
+def make_signal(df, timeframe="15minute"):
     d = add_indicators(df).dropna().copy()
     if len(d) < 30:
         raise HTTPException(502, "Not enough completed candles for the signal engine.")
@@ -127,7 +137,8 @@ def make_signal(df):
 
     return {
         "asset": "SENSEX",
-        "timeframe": "15m",
+        "timeframe": timeframe,
+        "timeframe": x["timeframe"] if "timeframe" in x else "selected",
         "signal": side,
         "score": int(score),
         "long_score": int(score_long),
@@ -151,13 +162,13 @@ def health():
     return {"ok": True, "groww_token_configured": bool(TOKEN), "mode": "PAPER"}
 
 @app.get("/api/signal")
-def signal():
-    return make_signal(fetch_sensex_candles(5))
+def signal(interval: str = Query("15minute")):
+    return make_signal(fetch_sensex_candles(interval), interval)
 
 @app.get("/api/candles")
-def candles(limit: int = Query(80, ge=20, le=200)):
-    d = fetch_sensex_candles(5).tail(limit)
-    return {"asset": "SENSEX", "timeframe": "15m", "candles": d.to_dict(orient="records")}
+def candles(limit: int = Query(80, ge=20, le=200), interval: str = Query("15minute")):
+    d = fetch_sensex_candles(interval).tail(limit)
+    return {"asset": "SENSEX", "timeframe": interval, "candles": d.to_dict(orient="records")}
 
 @app.get("/")
 def home():
