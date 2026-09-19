@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trading AI — SENSEX 15m</title>
+<style>
+body{font-family:system-ui;margin:0;background:#0d1117;color:#eee}
+main{max-width:700px;margin:auto;padding:16px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:16px;padding:16px;margin:12px 0}
+h1{font-size:22px}.signal{font-size:38px;font-weight:800}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.item{background:#0d1117;padding:12px;border-radius:12px}.muted{color:#9da7b3;font-size:13px}
+button{width:100%;padding:13px;border:0;border-radius:12px;font-weight:700}
+</style>
+</head>
+<body>
+<main>
+<h1>Trading AI Tool</h1>
+<div class="card">
+  <div class="muted">BSE SENSEX · 15-minute · PAPER MODE</div>
+  <div id="signal" class="signal">Loading…</div>
+  <div id="time" class="muted"></div>
+</div>
+<div class="card grid">
+  <div class="item"><div class="muted">Price</div><b id="price">—</b></div>
+  <div class="item"><div class="muted">Score</div><b id="score">—</b></div>
+  <div class="item"><div class="muted">Stop Loss</div><b id="sl">—</b></div>
+  <div class="item"><div class="muted">Target 1</div><b id="t1">—</b></div>
+  <div class="item"><div class="muted">Target 2</div><b id="t2">—</b></div>
+  <div class="item"><div class="muted">Target 3</div><b id="t3">—</b></div>
+  <div class="item"><div class="muted">RSI</div><b id="rsi">—</b></div>
+  <div class="item"><div class="muted">ATR</div><b id="atr">—</b></div>
+</div>
+<div class="card">
+  <button onclick="loadSignal()">Refresh signal</button>
+  <p class="muted">This prototype is for research/paper trading. It does not provide guaranteed or pinpoint-accurate entries/exits.</p>
+</div>
+<script>
+async function loadSignal(){
+  const s=await fetch('/api/signal').then(r=>r.json());
+  document.querySelector('#signal').textContent=s.signal;
+  document.querySelector('#time').textContent=s.candle_time;
+  for(const [id,key] of [['price','price'],['score','score'],['sl','stop_loss'],['t1','target1'],['t2','target2'],['t3','target3'],['rsi','rsi'],['atr','atr']])
+    document.querySelector('#'+id).textContent=s[key] ?? '—';
+}
+loadSignal(); setInterval(loadSignal,60000);
+</script>
+</main>
+</body>
+</html>
