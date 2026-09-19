@@ -100,61 +100,66 @@ def add_indicators(df):
 def make_signal(df, timeframe="15minute"):
     d = add_indicators(df).dropna().copy()
     if len(d) < 30:
-        raise HTTPException(502, "Not enough completed candles for the signal engine.")
+        raise HTTPException(502, f"Not enough completed candles for {timeframe}.")
     x = d.iloc[-1]
-    score_long = 0
-    score_short = 0
-
-    if x.close > x.ema9: score_long += 1
-    if x.ema9 > x.ema21: score_long += 1
-    if 52 <= x.rsi <= 72: score_long += 1
-    if x.close > x.hh20: score_long += 2
-    if x.volume > x.vol_ma20: score_long += 1
-
-    if x.close < x.ema9: score_short += 1
-    if x.ema9 < x.ema21: score_short += 1
-    if 28 <= x.rsi <= 48: score_short += 1
-    if x.close < x.ll20: score_short += 2
-    if x.volume > x.vol_ma20: score_short += 1
-
+    long_score = 0
+    short_score = 0
+    if x.close > x.ema9: long_score += 1
+    if x.ema9 > x.ema21: long_score += 1
+    if 52 <= x.rsi <= 72: long_score += 1
+    if x.close > x.hh20: long_score += 2
+    if x.volume > x.vol_ma20: long_score += 1
+    if x.close < x.ema9: short_score += 1
+    if x.ema9 < x.ema21: short_score += 1
+    if 28 <= x.rsi <= 48: short_score += 1
+    if x.close < x.ll20: short_score += 2
+    if x.volume > x.vol_ma20: short_score += 1
     side = "WAIT"
-    score = max(score_long, score_short)
-    if score_long >= 5 and score_long > score_short:
+    score = max(long_score, short_score)
+    if long_score >= 5 and long_score > short_score:
         side = "LONG"
-    elif score_short >= 5 and score_short > score_long:
+    elif short_score >= 5 and short_score > long_score:
         side = "SHORT"
+    return {
+        "asset": "SENSEX", "timeframe": timeframe, "signal": side,
+        "score": int(score), "long_score": int(long_score), "short_score": int(short_score),
+        "candle_time": str(x["time"]), "price": round(float(x.close), 2),
+        "rsi": round(float(x.rsi), 2), "ema9": round(float(x.ema9), 2),
+        "ema21": round(float(x.ema21), 2), "atr": round(float(x.atr), 2)
+    }
 
-    atr = float(x.atr)
-    entry = float(x.close)
-    if side == "LONG":
+@app.get("/api/multi-signal")
+def multi_signal():
+    timeframes = ["5minute", "10minute", "15minute", "30minute", "1hour"]
+    results = []
+    for tf in timeframes:
+        results.append(make_signal(fetch_sensex_candles(tf), tf))
+    long_votes = sum(1 for x in results if x["signal"] == "LONG")
+    short_votes = sum(1 for x in results if x["signal"] == "SHORT")
+    if long_votes >= 3 and long_votes > short_votes:
+        overall = "LONG"
+    elif short_votes >= 3 and short_votes > long_votes:
+        overall = "SHORT"
+    else:
+        overall = "WAIT"
+    entry_data = next((x for x in results if x["timeframe"] == "5minute"), results[0])
+    entry = entry_data["price"]
+    atr = entry_data["atr"]
+    if overall == "LONG":
         sl = entry - 1.2 * atr
-        t1, t2, t3 = entry + 1.0*atr, entry + 2.0*atr, entry + 3.0*atr
-    elif side == "SHORT":
+        t1, t2, t3 = entry + atr, entry + 2*atr, entry + 3*atr
+    elif overall == "SHORT":
         sl = entry + 1.2 * atr
-        t1, t2, t3 = entry - 1.0*atr, entry - 2.0*atr, entry - 3.0*atr
+        t1, t2, t3 = entry - atr, entry - 2*atr, entry - 3*atr
     else:
         sl = t1 = t2 = t3 = None
-
     return {
-        "asset": "SENSEX",
-        "timeframe": timeframe,
-        "timeframe": x["timeframe"] if "timeframe" in x else "selected",
-        "signal": side,
-        "score": int(score),
-        "long_score": int(score_long),
-        "short_score": int(score_short),
-        "candle_time": str(x["time"]),
-        "price": round(entry, 2),
-        "rsi": round(float(x.rsi), 2),
-        "ema9": round(float(x.ema9), 2),
-        "ema21": round(float(x.ema21), 2),
-        "atr": round(atr, 2),
-        "stop_loss": round(sl, 2) if sl is not None else None,
-        "target1": round(t1, 2) if t1 is not None else None,
-        "target2": round(t2, 2) if t2 is not None else None,
-        "target3": round(t3, 2) if t3 is not None else None,
-        "mode": "PAPER",
-        "warning": "Signal engine is rule-based; it cannot guarantee exact entries/exits or profits."
+        "asset": "SENSEX", "mode": "PAPER",
+        "signal": overall, "votes": {"LONG": long_votes, "SHORT": short_votes, "WAIT": 5-long_votes-short_votes},
+        "entry_timeframe": "5minute", "price": entry, "stop_loss": round(sl,2) if sl else None,
+        "target1": round(t1,2) if t1 else None, "target2": round(t2,2) if t2 else None,
+        "target3": round(t3,2) if t3 else None, "timeframes": results,
+        "warning": "Multi-timeframe confirmation is rule-based and cannot guarantee exact entries, exits, or profits."
     }
 
 @app.get("/health")
